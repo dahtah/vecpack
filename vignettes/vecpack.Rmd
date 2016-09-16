@@ -1,0 +1,238 @@
+---
+title: "Using vecpack"
+author: "Simon Barthelmé"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+\newcommand{\bm}[1]{\boldsymbol{\mathbf{#1}}}
+
+vecpack solves a problem commonly encountered when working with optimisers (like optim) and MCMC samplers: they expect to work on a function f that takes a vector as input. This is fine when optimising over vectors, but sometimes f is really a function of a matrix and a vector, or a matrix and an image and a scalar, etc. You could concatenate all these arguments into a single vector, but that always involves lots of boilerplate and book-keeping, and it's easy to make errors. 
+vecpack saves you from having to write most of the boilerplate. 
+
+Packing a list of values into a single vector is easy enough:
+
+```{r}
+l <- list(a= matrix(1:4,2,2),b = 0.4)
+sapply(l,as.vector) %>% do.call(c,.)
+```
+
+In vecpack, that functionality is provided by the vpack function:
+
+```{r}
+vpack(l)
+```
+
+Going the other way is more complicated: e.g., the vector 1,2,3,4 could be a 2x2 matrix  followed by a scalar, or one scalar followed by a 2x2 matrix, or two vectors of length 2 and 3, etc.
+To invert the packing, we need to know the structure, and in vecpack the structure is inferred from an example:
+
+```{r}
+vunpack <- gen.vunpack(l)
+vunpack(1:5)
+vpack(l) %>% vunpack
+```
+
+# Using vecpack with optim
+
+The first example is somewhat silly but hopefully you'll see where I'm going with this: let's say we're doing linear regression. 
+The data are pairs (x,y), our model is 
+$$ E(y) = a x + b $$
+and the corresponding log-likelihood is "cfun", below: 
+
+```{r}
+x <- seq(0,1,l=20)
+y <- 3*x - 2 +rnorm(length(x))
+cfun <- function(a,b) sum((y-(a*x+b))^2)
+```
+
+We'll use optim and vecpack to optimise cfun: 
+
+```{r}
+guess <- list(a=0,b=1)
+up <- gen.vunpack(guess) #Unpacking function
+cfun.lifted <- lift_up(cfun,up) #Now cfun accepts a vector argument
+opt <- optim(vpack(guess),cfun.lifted)
+up(opt$par)
+```
+
+vecpack includes an interface to optim called vpoptim, which removes all of the boilerplate: just provide a cost function, a guess and you're set. 
+
+```{r}
+opt <- vpoptim(guess,cfun)
+opt$par
+```
+
+Here's a better example: we seek to find a low-rank + diagonal decomposition of a matrix, i.e.
+
+$$ \bm{X} \approx \bm{A}\bm{A}^t + \sigma^2 \bm{I} $$ 
+
+```{r}
+X <- cov(USArrests)
+cfun <- function(A,sigma2)
+{
+    lrank <- tcrossprod(A,A) + sigma2*diag(nrow(A)) 
+    sum((X-lrank)^2)
+}
+guess <- list(A=matrix(0,4,2),sigma2=1)
+opt <- vpoptim(guess,cfun)
+opt$par
+```
+
+# Which objects can vecpack pack? 
+
+At the moment vecpack knows how to pack scalars, vectors, matrices, arrays and cimg objects (images from the [imager package](http://dahtah.github.io/imager)). 
+This means that you can do the following: 
+
+```{r fig.width=8,fig.height=4}
+library(imager)
+target <- grayscale(boats) %>% imresize(.15) %>% isoblur(3)
+#Blind deconvolution
+cfun <- function(im)
+    {
+        cost <- sum((isoblur(im,3) - target)^2)
+        penalty <- imgradient(im,"xy") %>% purrr::map(abs) %>% add %>% sum
+        cost+0.05*penalty
+    }
+cfun <- function(im,mat)
+{
+    cost <- sum((imager::convolve(im,as.cimg(mat)) - target)^2)
+    penalty <- imgradient(im,"xy") %>% purrr::map(abs) %>% add %>% sum
+    cost+0.05*penalty
+}
+guess <- list(im=target,mat=matrix(1,4,4)/16)
+opt <- vpoptim(guess,cfun,method="L-BFGS-B",control=list(trace=TRUE))
+out <- opt$par$im
+list(target,out) %>% imlist %>% plot(layout="row")
+
+```
+
+That's of course a terrible way of doing deconvolution but you get the idea. 
+
+# Extending vecpack
+
+vecpack is extensible: you can define your own ways of packing objects into vectors. For example, suppose we want to pack tri-diagonal matrices into vectors. All we need to do is create an S3 class for tridiagonal matrices, and define just three generics: as.vector and reshapefun. 
+
+First, some utility functions to get and set values: 
+
+```{r}
+#Extract or set values above diagonal
+utri <- function(M)
+{
+    M[row(M) == col(M) - 1]
+}
+
+`utri<-` <- function(M,value)
+{
+    M[row(M) == col(M) - 1] <- value
+    M
+}
+
+#Extract or set values below
+ltri <- function(M)
+{
+    M[row(M) == col(M) + 1]
+}
+
+`ltri<-` <- function(M,value)
+{
+    M[row(M) == col(M) + 1] <- value
+    M
+}
+```
+
+
+
+
+## First generic: as.vector 
+
+as.vector should take a (tri-diagonal) matrix and pack it into a vector: 
+
+```{r}
+as.vector.trid <- function(M,...)
+{
+    c(ltri(M),diag(M),utri(M))
+}
+
+trid <- function(M)
+{
+    class(M) <- c('trid','matrix')
+    M
+}
+
+diag(3) %>% trid %>% as.vector
+```
+
+## Second generic: length
+
+length should return the length of the tridiagonal matrix *when packed as a vector*: a tridiagonal matrix has $n + 2*(n-1) = 3n - 2$ degrees of freedom.
+
+```{r}
+length.trid <- function(V)
+{
+    n <- nrow(V)
+    3*n-2
+}
+```
+
+## Third generic: reshapefun 
+
+And next we need to define "reshapefun". Reshaping turns the vector back into the original object. "reshapefun.trid" should return a reshaping function appropriate for a given matrix. Here's reshapefun.matrix, for instance:
+
+```{r}
+reshapefun.matrix <- function(x,...) function(k) matrix(k,nrow(x),ncol(x))
+rs <- matrix(0,2,2) %>% reshapefun
+rs(1:4)
+```
+
+We define reshapefun.trid along the same lines:
+
+```{r}
+reshapefun.trid <- function(x,...)
+{
+    n <- nrow(x)
+    #The following function returns a matrix of the right size
+    function(k)
+    {
+        M <- matrix(0,n,n)
+        ltri(M) <- k[1:(n-1)]
+        diag(M) <- k[n+0:(n-1)]
+        utri(M) <- k[(2*n):length(k)]
+        M
+    }
+}
+V <- diag(3) %>% trid
+rs <- reshapefun(V)
+as.vector(V) %>% rs
+```
+
+We're now good to go with vpack:
+
+```{r}
+l <- list(V=V,a=3)
+up <- gen.vunpack(l)
+vpack(l) %>% up
+```
+
+We can now use it to find, e.g., a tri-diagonal approximate inverse: 
+
+```{r}
+#The cost function encourages A*X = Id
+X <- rnorm(16) %>% matrix(4,4)
+cfun <- function(A)
+{
+    P <- A%*%X
+    sum(abs(eigen(P)$val- 1))
+}
+A <- diag(4) %>% trid
+opt <- vpoptim(A,cfun,method="BFGS",control=list(trace=T,maxit=1e5))
+opt$par
+
+```
+
+## Other uses for vecpack
+
+You can use vecpack to express constraints as well (hiding them from the cost function). TODO: example with SPD matrices. 

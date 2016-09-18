@@ -7,9 +7,11 @@
 vpoptim(guess, cfun, ...)
 }
 \arguments{
-\item{guess:}{list of initial parameters}
+\item{guess}{list of initial parameters}
 
-\item{fun:}{a cost function (the names of the arguments should be the *same ones* as in the "guess" argument)}
+\item{...}{passed on to optim}
+
+\item{fun}{a cost function (the names of the arguments should be the *same ones* as in the "guess" argument)}
 }
 \description{
 vpoptim uses vpack to let you call optim on cost functions involving multiple arguments. See examples for usage.
@@ -34,5 +36,7 @@ cfun <- function(A,sigma2)
 guess <- list(A=matrix(0,4,2),sigma2=1)
 opt <- vpoptim(guess,cfun)
 opt$par
+#Extra parameters are passed on to optim:
+opt <- vpoptim(guess,cfun,method="BFGS")
 }
 

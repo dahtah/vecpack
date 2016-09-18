@@ -1,6 +1,53 @@
-#' @importFrom purrr map map_dbl map_lgl map_df map2
-#' @importFrom magrittr "%>%"
+#' vecpack: a package for packing things into a vector
+#'
+#' vecpack is an experimental package for R, meant to help you stuff various things into a single vector (which is easy), and get them back in the right shape (which isn't). 
+#' It lets you interface with optim in a more natural way: in the following example we compute a low-rank + diagonal approximation to a matrix. The most natural way of writing the cost function involves two arguments: a matrix and a scalar. Using vecpack you can send that cost function directly to optim. 
+#' @docType package
+#' @examples
+#' #Packing things into a vector is easy
+#' list(A=matrix(0,2,2),b=1:3) %>% sapply(as.vector) %>% do.call("c",.)
+#' #Going the other way isn't: many objects correspond to the same vector
+#' #gen.vunpack generates an "unpacking" function from an example
+#' l <- list(A=matrix(0,2,2),b=1:3)
+#' vunpack <- gen.vunpack(l)
+#' vpack(l)
+#' vpack(l) %>% vunpack
+#'
+#' #The most common use for vpack is for interfacing with optimisation packages
+#' #In this example we compute a rank-2 + diagonal approximation 
+#' #to the matrix X
+#' X <- cor(USArrests ) 
+#' #A cost function over two parameters: a is a scalar and B is a matrix
+#' cfun <- function(a,B)
+#'    {
+#'        lowrank <- a*diag(4) + tcrossprod(B)
+#'        sum((lowrank-X)^2)
+#'    }
+#' guess <- list(a=0,B=matrix(0,4,2))
+#' #vpoptim wraps optim
+#' res <- vpoptim(guess,cfun)
+#' @name vecpack
+#' @author Simon Barthelme
 NULL
+
+#' @importFrom purrr map map_dbl map_lgl map_df map2
+#' @import magrittr
+#' @importFrom stats optim
+#' @export "%>%"
+NULL
+
+#' Pipe operator from magrittr package
+#'
+#' The pipe operator lets you string function calls together. See help from magrittr package for more.
+#' 
+#' @name %>%
+#' @rdname pipe
+#' @param lhs data
+#' @param rhs a function
+NULL
+
+
+utils::globalVariables(c(".", "%>%"))
 
 
 ##' Pack a list of objects into a vector
@@ -26,11 +73,13 @@ vpack <- function(l)
         as.vector(l)
     }
 }
-
+##' S3 generic for converting an object back into a vector
+##'
+##' When converting an object into a vector part of the meta-data is lost (for example, when converting a matrix to a vector, the dimensions of the original matrix are lost). These generic functions return a "reshaping function" appropriate for turning a vector back into the original object. They're used internally by vecpack, see Vignette.
+##' @param x an object
+##' @param ... ignored
 ##' @export 
 reshapefun <- function(x,...)    UseMethod("reshapefun", x)
-
-
 
 ##' @export 
 reshapefun.numeric <- function(x,...) function(k) k
@@ -129,8 +178,9 @@ gen.vunpack <- function(l)
 ##' An interface to optim for optimisation over multiple arguments
 ##'
 ##' vpoptim uses vpack to let you call optim on cost functions involving multiple arguments. See examples for usage.
-##' @param guess: list of initial parameters
-##' @param fun: a cost function (the names of the arguments should be the *same ones* as in the "guess" argument)
+##' @param guess list of initial parameters
+##' @param fun a cost function (the names of the arguments should be the *same ones* as in the "guess" argument)
+##' @param ... passed on to optim
 ##' @examples
 ##' #A cost function in two arguments:
 ##' cost <- function(a,b)
@@ -151,6 +201,8 @@ gen.vunpack <- function(l)
 ##' guess <- list(A=matrix(0,4,2),sigma2=1)
 ##' opt <- vpoptim(guess,cfun)
 ##' opt$par
+##' #Extra parameters are passed on to optim:
+##' opt <- vpoptim(guess,cfun,method="BFGS")
 ##' @export
 vpoptim <- function(guess,cfun,...)
 {
@@ -160,3 +212,24 @@ vpoptim <- function(guess,cfun,...)
     opt$par <- up(opt$par)
     opt
 }
+
+##' An interface to numDeriv::grad for numerical gradients over multiple arguments
+##'
+##' Same as vpoptim, pretty much. See examples
+##'
+##' @param fun function to differentiate (the names of the arguments should be the *same ones* as in the "guess" argument)
+##' @param x compute gradient at x
+##' @param ... passed on to grad
+##' @examples
+##' #gradient of a function of two arguments
+##' vpgrad(function(x,y) x+y,list(x=1,y=3))
+##' #gradient of a matrix function, returned as a matrix
+##' vpgrad(det,diag(2))
+##' @export
+vpgrad <- function(fun,x,...)
+    {
+        up <- gen.vunpack(x) 
+        fun.lifted <- lift_up(fun,up) 
+        gr <- numDeriv::grad(fun.lifted,vpack(x),...)
+        up(gr)
+    }

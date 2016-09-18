@@ -11,6 +11,11 @@ vignette: >
 
 \newcommand{\bm}[1]{\boldsymbol{\mathbf{#1}}}
 
+```{r init,echo=FALSE,message=FALSE}
+library(vecpack)
+library(purrr)
+```
+
 vecpack solves a problem commonly encountered when working with optimisers (like optim) and MCMC samplers: they expect to work on a function f that takes a vector as input. This is fine when optimising over vectors, but sometimes f is really a function of a matrix and a vector, or a matrix and an image and a scalar, etc. You could concatenate all these arguments into a single vector, but that always involves lots of boilerplate and book-keeping, and it's easy to make errors. 
 vecpack saves you from having to write most of the boilerplate. 
 
@@ -82,35 +87,20 @@ opt <- vpoptim(guess,cfun)
 opt$par
 ```
 
-# Which objects can vecpack pack? 
+## Which objects can vecpack pack? 
 
 At the moment vecpack knows how to pack scalars, vectors, matrices, arrays and cimg objects (images from the [imager package](http://dahtah.github.io/imager)). 
-This means that you can do the following: 
 
-```{r fig.width=8,fig.height=4}
-library(imager)
-target <- grayscale(boats) %>% imresize(.15) %>% isoblur(3)
-#Blind deconvolution
-cfun <- function(im)
-    {
-        cost <- sum((isoblur(im,3) - target)^2)
-        penalty <- imgradient(im,"xy") %>% purrr::map(abs) %>% add %>% sum
-        cost+0.05*penalty
-    }
-cfun <- function(im,mat)
-{
-    cost <- sum((imager::convolve(im,as.cimg(mat)) - target)^2)
-    penalty <- imgradient(im,"xy") %>% purrr::map(abs) %>% add %>% sum
-    cost+0.05*penalty
-}
-guess <- list(im=target,mat=matrix(1,4,4)/16)
-opt <- vpoptim(guess,cfun,method="L-BFGS-B",control=list(trace=TRUE))
-out <- opt$par$im
-list(target,out) %>% imlist %>% plot(layout="row")
+## Computing numerical gradients
 
+There's an interface to the function "grad" from the *numDeriv* package, that works along the same lines as vpoptim:
+
+```{r}
+#gradient of a function of two arguments
+vpgrad(function(x,y) x+y,list(x=1,y=3))
+#gradient of a matrix function, returned as a matrix
+vpgrad(det,diag(2))
 ```
-
-That's of course a terrible way of doing deconvolution but you get the idea. 
 
 # Extending vecpack
 
@@ -230,8 +220,24 @@ cfun <- function(A)
 A <- diag(4) %>% trid
 opt <- vpoptim(A,cfun,method="BFGS",control=list(trace=T,maxit=1e5))
 opt$par
-
 ```
+
+## Making your own wrapper
+
+If you'd like to wrap another optimiser/MCMC sampler, it should be easy enough. The source for vpoptim is just a few lines: 
+
+```{r}
+vpoptim <- function(guess,cfun,...)
+{
+    up <- gen.vunpack(guess) 
+    cfun.lifted <- lift_up(cfun,up) 
+    opt <- optim(vpack(guess),cfun.lifted,...)
+    opt$par <- up(opt$par)
+    opt
+}
+```
+
+If you've made another interface, consider contributing it to the vecpack package. 
 
 ## Other uses for vecpack
 

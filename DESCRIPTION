@@ -1,8 +1,7 @@
 Package: vecpack
 Type: Package
-Title: Packs lists into vectors, and unpacks vectors into lists. Useful for
-    interfacing with optimisation and MCMC functions.
-Version: 1.0
+Title: Helps Turn Objects and Lists into Vectors, to Facilitate Interaction with Optimisers and Samplers
+Version: 0.1
 Date: 2016-09-14
 Author: Simon Barthelme <simon.barthelme@gipsa-lab.fr>
 Maintainer: Simon Barthelme <simon.barthelme@gipsa-lab.fr>
@@ -12,7 +11,7 @@ Description: Functions like optim(par,f) require "par" to be a vector and "f"
     more natural to define f = function(scalar,vector,matrix) instead of packing
     everything into a single vector. vecpack does the packing and unpacking for you.
 Imports:
-    magrittr,purrr,imager
+    magrittr,purrr,imager,numDeriv
 License: GPL
 RoxygenNote: 5.0.1
 Suggests: knitr,

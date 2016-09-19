@@ -213,6 +213,18 @@ vpoptim <- function(guess,cfun,...)
     opt
 }
 
+
+vpoptimx <- function(guess,cfun,...)
+{
+    up <- gen.vunpack(guess) 
+    cfun.lifted <- lift_up(cfun,up) 
+    opt <- optimx(vpack(guess),cfun.lifted,...)
+    n <- length(vpack(guess))
+    opt$par <- apply(opt,1,function(v) up(v[1:n]))
+    opt
+}
+
+
 ##' An interface to numDeriv::grad for numerical gradients over multiple arguments
 ##'
 ##' Same as vpoptim, pretty much. See examples

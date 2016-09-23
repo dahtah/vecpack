@@ -11,7 +11,7 @@ Description: Functions like optim(par,f) require "par" to be a vector and "f"
     more natural to define f = function(scalar,vector,matrix) instead of packing
     everything into a single vector. vecpack does the packing and unpacking for you.
 Imports:
-    magrittr,purrr,imager,numDeriv
+    magrittr,purrr,imager,numDeriv,optimx
 License: GPL
 RoxygenNote: 5.0.1
 Suggests: knitr,

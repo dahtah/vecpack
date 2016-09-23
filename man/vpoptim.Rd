@@ -9,9 +9,9 @@ vpoptim(guess, cfun, ...)
 \arguments{
 \item{guess}{list of initial parameters}
 
-\item{...}{passed on to optim}
+\item{cfun}{a cost function (the names of the arguments should be the *same ones* as in the "guess" argument)}
 
-\item{fun}{a cost function (the names of the arguments should be the *same ones* as in the "guess" argument)}
+\item{...}{passed on to optim}
 }
 \description{
 vpoptim uses vpack to let you call optim on cost functions involving multiple arguments. See examples for usage.

@@ -179,7 +179,7 @@ gen.vunpack <- function(l)
 ##'
 ##' vpoptim uses vpack to let you call optim on cost functions involving multiple arguments. See examples for usage.
 ##' @param guess list of initial parameters
-##' @param fun a cost function (the names of the arguments should be the *same ones* as in the "guess" argument)
+##' @param cfun a cost function (the names of the arguments should be the *same ones* as in the "guess" argument)
 ##' @param ... passed on to optim
 ##' @examples
 ##' #A cost function in two arguments:
